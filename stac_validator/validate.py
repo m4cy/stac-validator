@@ -9,6 +9,9 @@ import jsonschema  # type: ignore
 from jsonschema import RefResolver
 from requests import exceptions  # type: ignore
 
+import time
+import random
+
 from .utilities import (
     fetch_and_parse_file,
     fetch_and_parse_schema,
@@ -32,6 +35,8 @@ class StacValidate:
         verbose: bool = False,
         no_output: bool = False,
         log: str = "",
+        retry: Optional[int] = None,
+        random_samp: Optional[int] = None,
     ):
         self.stac_file = stac_file
         self.message: list = []
@@ -50,6 +55,10 @@ class StacValidate:
         self.no_output = False
         self.valid = False
         self.log = log
+        self.random_samp = random_samp
+        self.retry = retry
+        self.samples: list = []
+        # self.fails: list = []
 
     def create_err_msg(self, err_type: str, err_msg: str) -> dict:
         self.valid = False
@@ -60,6 +69,7 @@ class StacValidate:
             "valid_stac": False,
             "error_type": err_type,
             "error_message": err_msg,
+            # "fails": self.fails,
         }
 
     def create_links_message(self):
@@ -82,6 +92,8 @@ class StacValidate:
             "valid_stac": False,
             "asset_type": stac_type.upper(),
             "validation_method": val_type,
+            # "fails": self.fails,
+            "granules_left" : self.random_samp - len(self.samples),
         }
 
     def assets_validator(self) -> dict:
@@ -204,7 +216,6 @@ class StacValidate:
                 message.update(
                     self.create_err_msg("JSONSchemaValidationError", err_msg)
                 )
-                self.message.append(message)
                 return False
             message["valid_stac"] = True
             self.message.append(message)
@@ -226,7 +237,19 @@ class StacValidate:
                         self.stac_file = st + "/" + address
                     else:
                         self.stac_file = address
-                    self.stac_content = fetch_and_parse_file(self.stac_file)
+                    attempts = self.retry
+                    while(attempts > 0):
+                        try:
+                            self.stac_content = fetch_and_parse_file(self.stac_file)
+                            # while self.stac_file in self.fails:
+                            #     self.fails.remove(self.stac_file)
+                            break
+                        except:
+                            attempts -= 1
+                            # if self.stac_file not in self.fails:
+                            #     self.fails.append(self.stac_file)  
+                            # message["fails"] = self.fails
+                            time.sleep(15)
                     self.stac_content["stac_version"] = self.version
                     stac_type = get_stac_type(self.stac_content).lower()
 
@@ -258,6 +281,79 @@ class StacValidate:
                     if self.verbose is True:
                         click.echo(json.dumps(message, indent=4))
         return True
+    
+    def random_validator(self, stac_type: str) -> bool:
+        collection_link = self.stac_content["links"][0]["href"]
+        count = 0
+        while(len(self.samples) < self.random_samp):
+            click.echo(json.dumps(count, indent=4))
+            self.stac_file = collection_link
+            self.stac_content = fetch_and_parse_file(self.stac_file)
+            self.stac_content["stac_version"] = self.version
+            stac_type = get_stac_type(self.stac_content).lower()
+            for i in range(4):
+                self.custom = set_schema_addr(self.version, stac_type.lower())
+                message = self.create_message(stac_type, "random sample")
+                message["valid_stac"] = False
+                try:
+                    _ = self.default_validator(stac_type)
+                except jsonschema.exceptions.ValidationError as e:
+                    if e.absolute_path:
+                        err_msg = f"{e.message}. Error is in {' -> '.join([str(i) for i in e.absolute_path])}"
+                    else:
+                        err_msg = f"{e.message} of the root of the STAC object"
+                    message.update(
+                        self.create_err_msg("JSONSchemaValidationError", err_msg)
+                    )
+                    self.message.append(message)
+                    return False
+                message["valid_stac"] = True
+                self.message.append(message)
+                if i < 3:  # if going through collection->year, year->month, month->day           
+                    child_list = [x for x in self.stac_content["links"] if x["rel"] == "child"]
+                    catalog = random.choice(child_list)
+                    address = catalog["href"]
+                    self.stac_file = address
+                else: # if going through day catalog to get to items
+                    item_list = [x for x in self.stac_content["links"] if x["rel"] == "item"]
+                    item = random.choice(item_list)
+                    address = item["href"]
+                    self.stac_file = address
+                    if address in self.samples:
+                        i = 0
+                        continue
+                    else:
+                        self.samples.append(address)
+                attempts = self.retry
+                while(attempts > 0):
+                    try:
+                        self.stac_content = fetch_and_parse_file(self.stac_file)
+                        break
+                    except:
+                        attempts -= 1
+                        time.sleep(15)
+                self.stac_content["stac_version"] = self.version
+                stac_type = get_stac_type(self.stac_content).lower()
+                if self.verbose is True:
+                    click.echo(json.dumps(message, indent=4))
+            # validate item
+            self.custom = set_schema_addr(self.version, stac_type.lower())
+            message = self.create_message(stac_type, "recursive")
+            if self.version == "0.7.0":
+                schema = fetch_and_parse_schema(self.custom)
+                # this next line prevents this: unknown url type: 'geojson.json' ??
+                schema["allOf"] = [{}]
+                jsonschema.validate(self.stac_content, schema)
+            else:
+                msg = self.default_validator(stac_type)
+                message["schema"] = msg["schema"]
+            message["valid_stac"] = True
+            if self.log != "":
+                self.message.append(message)
+            if self.verbose is True:
+                click.echo(json.dumps(message, indent=4))
+            count += 1
+        return True
 
     def validate_dict(cls, stac_content):
         cls.stac_content = stac_content
@@ -285,6 +381,8 @@ class StacValidate:
                 cls.valid = cls.recursive_validator(stac_type)
             elif cls.extensions is True:
                 message = cls.extensions_validator(stac_type)
+            elif cls.random_samp > 0:
+                cls.valid = cls.random_validator(stac_type)
             else:
                 cls.valid = True
                 message = cls.default_validator(stac_type)

@@ -61,6 +61,16 @@ def print_update_message(version):
     default="",
     help="Save full recursive output to log file (local filepath).",
 )
+@click.option(
+    "--retry",
+    type=int,
+    help="Number of times to retry a certain item. For use in recursively validating large collections to allow overwhelmed servers to recover. Ignored if `recursive == False`.",
+)
+@click.option(
+    "--random_samp",
+    type=int,
+    help="Number of granules to randomly sample and validate if collection is too large to be reasonably recursed over. Limit is min of 100 and collection size.",
+)
 @click.version_option(version=pkg_resources.require("stac-validator")[0].version)
 def main(
     stac_file,
@@ -74,6 +84,8 @@ def main(
     verbose,
     no_output,
     log_file,
+    retry,
+    random_samp
 ):
 
     valid = True
@@ -89,6 +101,8 @@ def main(
         verbose=verbose,
         no_output=no_output,
         log=log_file,
+        retry=retry,
+        random_samp=random_samp
     )
     valid = stac.run()
 
