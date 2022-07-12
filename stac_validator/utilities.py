@@ -50,13 +50,20 @@ def fetch_and_parse_file(input_path) -> dict:
     data = None
     if is_valid_url(input_path):
         resp = requests.get(input_path)
-        data = resp.json()
+        data = resp.json()    
     else:
         with open(input_path) as f:
             data = json.load(f)
 
     return data
 
+# get number of items in a collection
+def get_num_items(input_path) -> int:
+    data = fetch_and_parse_file(input_path) # collection
+    items_link = [x["href"] for x in data["links"] if x["rel"] == "items"]
+    items_data = fetch_and_parse_file(items_link[0])
+    num_items = items_data["context"]["matched"]
+    return num_items
 
 @functools.lru_cache(maxsize=48)
 def fetch_and_parse_schema(input_path) -> dict:

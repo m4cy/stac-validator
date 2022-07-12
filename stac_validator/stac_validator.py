@@ -67,9 +67,14 @@ def print_update_message(version):
     help="Number of times to retry a certain item. For use in recursively validating large collections to allow overwhelmed servers to recover. Ignored if `recursive == False`.",
 )
 @click.option(
-    "--random_samp",
+    "--random",
+    is_flag=True,
+    help="Turn on if collection is too large to be reasonably recursed over.",
+)
+@click.option(
+    "--sample_number",
     type=int,
-    help="Number of granules to randomly sample and validate if collection is too large to be reasonably recursed over. Limit is min of 100 and collection size.",
+    help="Number of granules to randomly sample and validate if collection is too large to be reasonably recursed over. Limit is min of 300 and collection size.",
 )
 @click.version_option(version=pkg_resources.require("stac-validator")[0].version)
 def main(
@@ -85,7 +90,8 @@ def main(
     no_output,
     log_file,
     retry,
-    random_samp
+    random,
+    sample_number,
 ):
 
     valid = True
@@ -102,7 +108,8 @@ def main(
         no_output=no_output,
         log=log_file,
         retry=retry,
-        random_samp=random_samp
+        random=random,
+        sample_number=sample_number,
     )
     valid = stac.run()
 
@@ -117,4 +124,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    main() # pylint: disable=no-value-for-parameter

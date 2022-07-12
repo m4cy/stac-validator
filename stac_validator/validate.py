@@ -10,7 +10,7 @@ from jsonschema import RefResolver
 from requests import exceptions  # type: ignore
 
 import time
-import random
+import numpy as np
 
 from .utilities import (
     fetch_and_parse_file,
@@ -18,6 +18,7 @@ from .utilities import (
     get_stac_type,
     link_request,
     set_schema_addr,
+    get_num_items,
 )
 
 
@@ -36,7 +37,8 @@ class StacValidate:
         no_output: bool = False,
         log: str = "",
         retry: Optional[int] = None,
-        random_samp: Optional[int] = None,
+        random: bool = False,
+        sample_number: Optional[int] = None,
     ):
         self.stac_file = stac_file
         self.message: list = []
@@ -55,7 +57,8 @@ class StacValidate:
         self.no_output = False
         self.valid = False
         self.log = log
-        self.random_samp = random_samp
+        self.random = random
+        self.sample_number = sample_number
         self.retry = retry
         self.samples: list = []
         # self.fails: list = []
@@ -69,7 +72,6 @@ class StacValidate:
             "valid_stac": False,
             "error_type": err_type,
             "error_message": err_msg,
-            # "fails": self.fails,
         }
 
     def create_links_message(self):
@@ -92,8 +94,6 @@ class StacValidate:
             "valid_stac": False,
             "asset_type": stac_type.upper(),
             "validation_method": val_type,
-            # "fails": self.fails,
-            "granules_left" : self.random_samp - len(self.samples),
         }
 
     def assets_validator(self) -> dict:
@@ -216,6 +216,7 @@ class StacValidate:
                 message.update(
                     self.create_err_msg("JSONSchemaValidationError", err_msg)
                 )
+                self.message.append(message)
                 return False
             message["valid_stac"] = True
             self.message.append(message)
@@ -237,19 +238,7 @@ class StacValidate:
                         self.stac_file = st + "/" + address
                     else:
                         self.stac_file = address
-                    attempts = self.retry
-                    while(attempts > 0):
-                        try:
-                            self.stac_content = fetch_and_parse_file(self.stac_file)
-                            # while self.stac_file in self.fails:
-                            #     self.fails.remove(self.stac_file)
-                            break
-                        except:
-                            attempts -= 1
-                            # if self.stac_file not in self.fails:
-                            #     self.fails.append(self.stac_file)  
-                            # message["fails"] = self.fails
-                            time.sleep(15)
+                    self.stac_content = fetch_and_parse_file(self.stac_file)
                     self.stac_content["stac_version"] = self.version
                     stac_type = get_stac_type(self.stac_content).lower()
 
@@ -284,13 +273,14 @@ class StacValidate:
     
     def random_validator(self, stac_type: str) -> bool:
         collection_link = self.stac_content["links"][0]["href"]
-        count = 0
-        while(len(self.samples) < self.random_samp):
-            click.echo(json.dumps(count, indent=4))
+        item_count = get_num_items(self.stac_file)
+        np.random.seed(12) # resetting seed each time if inside of loop (bad)
+        while(len(self.samples) < self.sample_number and len(self.samples) < item_count):
             self.stac_file = collection_link
             self.stac_content = fetch_and_parse_file(self.stac_file)
             self.stac_content["stac_version"] = self.version
             stac_type = get_stac_type(self.stac_content).lower()
+            unique_item = False
             for i in range(4):
                 self.custom = set_schema_addr(self.version, stac_type.lower())
                 message = self.create_message(stac_type, "random sample")
@@ -308,22 +298,20 @@ class StacValidate:
                     self.message.append(message)
                     return False
                 message["valid_stac"] = True
-                self.message.append(message)
                 if i < 3:  # if going through collection->year, year->month, month->day           
                     child_list = [x for x in self.stac_content["links"] if x["rel"] == "child"]
-                    catalog = random.choice(child_list)
+                    catalog = np.random.choice(child_list)
                     address = catalog["href"]
                     self.stac_file = address
                 else: # if going through day catalog to get to items
                     item_list = [x for x in self.stac_content["links"] if x["rel"] == "item"]
-                    item = random.choice(item_list)
-                    address = item["href"]
-                    self.stac_file = address
-                    if address in self.samples:
-                        i = 0
-                        continue
-                    else:
+                    item = np.random.choice(item_list)
+                    address = item["href"] 
+                    self.stac_file = address # this is address of item, adding it to list of samples so far
+                    if address not in self.samples: # if item address was already in list, restart loop
+                        unique_item = True
                         self.samples.append(address)
+                        # self.message.append(message)
                 attempts = self.retry
                 while(attempts > 0):
                     try:
@@ -332,13 +320,16 @@ class StacValidate:
                     except:
                         attempts -= 1
                         time.sleep(15)
+                # self.stac_content = fetch_and_parse_file(self.stac_file)
                 self.stac_content["stac_version"] = self.version
                 stac_type = get_stac_type(self.stac_content).lower()
-                if self.verbose is True:
-                    click.echo(json.dumps(message, indent=4))
+                # if self.verbose is True:
+                #     click.echo(json.dumps(message, indent=4))
+            if not unique_item:
+                continue
             # validate item
             self.custom = set_schema_addr(self.version, stac_type.lower())
-            message = self.create_message(stac_type, "recursive")
+            message = self.create_message(stac_type, "random sample")
             if self.version == "0.7.0":
                 schema = fetch_and_parse_schema(self.custom)
                 # this next line prevents this: unknown url type: 'geojson.json' ??
@@ -348,18 +339,18 @@ class StacValidate:
                 msg = self.default_validator(stac_type)
                 message["schema"] = msg["schema"]
             message["valid_stac"] = True
-            if self.log != "":
-                self.message.append(message)
+            self.message.append(message)
+            # if self.log != "":
+            #     self.message.append(message)
             if self.verbose is True:
                 click.echo(json.dumps(message, indent=4))
-            count += 1
         return True
 
-    def validate_dict(cls, stac_content):
+    def validate_dict(cls, stac_content): # pylint: disable=no-self-argument
         cls.stac_content = stac_content
         return cls.run()
 
-    def run(cls):
+    def run(cls): # pylint: disable=no-self-argument
         message = {}
         try:
             if cls.stac_file is not None:
@@ -381,13 +372,15 @@ class StacValidate:
                 cls.valid = cls.recursive_validator(stac_type)
             elif cls.extensions is True:
                 message = cls.extensions_validator(stac_type)
-            elif cls.random_samp > 0:
+            elif cls.random:
+                if cls.sample_number < 1 or cls.sample_number > 500:
+                    raise ValueError("Sample number must be between 1 and 500.")
                 cls.valid = cls.random_validator(stac_type)
             else:
                 cls.valid = True
                 message = cls.default_validator(stac_type)
 
-        except URLError as e:
+        except URLError as e: 
             message.update(cls.create_err_msg("URLError", str(e)))
         except JSONDecodeError as e:
             message.update(cls.create_err_msg("JSONDecodeError", str(e)))
@@ -411,7 +404,7 @@ class StacValidate:
             message.update(cls.create_err_msg("JSONSchemaValidationError", err_msg))
         except KeyError as e:
             message.update(cls.create_err_msg("KeyError", str(e)))
-        except HTTPError as e:
+        except HTTPError as e: # pylint: disable=bad-except-order
             message.update(cls.create_err_msg("HTTPError", str(e)))
         except Exception as e:
             message.update(cls.create_err_msg("Exception", str(e)))
