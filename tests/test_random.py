@@ -6,7 +6,7 @@ __authors__ = "James Banting", "Jonathan Healy"
 
 from stac_validator import stac_validator
 
-def btest_random(): # basic test
+def test_random(): # basic test
     stac_file = "https://cmr.earthdata.nasa.gov/stac/GES_DISC/collections/M2T1NXSLV"
     stac = stac_validator.StacValidate(stac_file, random=True, sample_number=10, retry=5)
     stac.run()    
@@ -114,7 +114,7 @@ def btest_random(): # basic test
         }
     ]
 
-def btest_lower_bounds_random(): # edge sample test
+def test_lower_bounds_random(): # edge sample test
     stac_file = "https://cmr.earthdata.nasa.gov/stac/GES_DISC/collections/M2T1NXSLV"
     stac = stac_validator.StacValidate(stac_file, random=True, sample_number=1, retry=5)
     stac.run()    
@@ -132,7 +132,7 @@ def btest_lower_bounds_random(): # edge sample test
     }
 ]
 
-def btest_zero_samples_random(): # edge sample test
+def test_zero_samples_random(): # edge sample test
     stac_file = "https://cmr.earthdata.nasa.gov/stac/GES_DISC/collections/M2T1NXSLV"
     stac = stac_validator.StacValidate(stac_file, random=True, sample_number=0, retry=5)
     stac.run()    
