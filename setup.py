@@ -36,7 +36,6 @@ setup(
         "click>=8.0.0",
         "types-setuptools",
         "numpy",
-        "time"
     ],
     packages=["stac_validator"],
     entry_points={
