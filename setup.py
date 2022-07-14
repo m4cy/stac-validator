@@ -28,13 +28,15 @@ setup(
     keywords="STAC validation raster",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/stac-utils/stac-validator",
-    download_url="https://github.com/stac-utils/stac-validator/archive/v2.5.0.tar.gz",
+    url="hhttps://github.com/m4cy/stac-validator",
+    download_url="https://github.com/m4cy/stac-validator/archive/v2.5.0.tar.gz",
     install_requires=[
         "requests>=2.19.1",
         "jsonschema>=3.2.0",
         "click>=8.0.0",
         "types-setuptools",
+        "numpy",
+        "time"
     ],
     packages=["stac_validator"],
     entry_points={
