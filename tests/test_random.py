@@ -5,10 +5,11 @@ Description: Test validation for random sampling
 __authors__ = "James Banting", "Jonathan Healy"
 
 from stac_validator import stac_validator
+stress = False
 
 def test_random(): # basic test
     stac_file = "https://cmr.earthdata.nasa.gov/stac/GES_DISC/collections/M2T1NXSLV"
-    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=10, retry=5)
+    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=10, retry=5, seed=12)
     stac.run()    
     assert len(stac.message) == 10
     assert stac.message == [
@@ -116,7 +117,7 @@ def test_random(): # basic test
 
 def test_lower_bounds_random(): # edge sample test
     stac_file = "https://cmr.earthdata.nasa.gov/stac/GES_DISC/collections/M2T1NXSLV"
-    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=1, retry=5)
+    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=1, retry=5, seed=12)
     stac.run()    
     assert len(stac.message) == 1
     assert stac.message == [
@@ -132,9 +133,16 @@ def test_lower_bounds_random(): # edge sample test
     }
 ]
 
+@pytest.mark.skipif(stress == True, reason="don't always want to take an hour to run test") # pylint: disable=undefined-variable
+def test_upper_bounds_random(): # edge sample test/stress test
+    stac_file = "https://cmr.earthdata.nasa.gov/stac/GES_DISC/collections/M2T1NXSLV"
+    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=500, retry=5, seed=12)
+    stac.run()    
+    assert len(stac.message) == 500
+
 def test_zero_samples_random(): # edge sample test
     stac_file = "https://cmr.earthdata.nasa.gov/stac/GES_DISC/collections/M2T1NXSLV"
-    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=0, retry=5)
+    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=0, retry=5, seed=12)
     stac.run()    
     assert len(stac.message) == 1
     assert stac.message == [
@@ -152,6 +160,6 @@ def test_zero_samples_random(): # edge sample test
 
 def test_collection_limit_bounds_random(): # test when sample number is greater than actual number of granules
     stac_file = "https://cmr.earthdata.nasa.gov/stac/LANCEMODIS/collections/VNP14IMGTDL_NRT"
-    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=10, retry=5)
+    stac = stac_validator.StacValidate(stac_file, random=True, sample_number=10, retry=5, seed=12)
     stac.run()
-    assert len(stac.message) == 8
+    assert len(stac.message) == 7

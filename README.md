@@ -109,6 +109,7 @@ Options:
   --retry                  Retry validation.  
   --random                 Randomly sample collection.
   --sample_number          Number of samples to take. Ignored if `random == False`.
+  --seed                   Random seed. Ignored if `random == False`.
   --version                Show the version and exit.
   --help                   Show this message and exit.
   

@@ -39,6 +39,7 @@ class StacValidate:
         retry: Optional[int] = None,
         random: bool = False,
         sample_number: Optional[int] = None,
+        seed: Optional[int] = None,
     ):
         self.stac_file = stac_file
         self.message: list = []
@@ -61,7 +62,7 @@ class StacValidate:
         self.sample_number = sample_number
         self.retry = retry
         self.samples: list = []
-        # self.fails: list = []
+        self.seed = seed
 
     def create_err_msg(self, err_type: str, err_msg: str) -> dict:
         self.valid = False
@@ -271,81 +272,95 @@ class StacValidate:
                         click.echo(json.dumps(message, indent=4))
         return True
     
+
     def random_validator(self, stac_type: str) -> bool:
+        # save collection link as starting point
         collection_link = self.stac_content["links"][0]["href"]
         item_count = get_num_items(self.stac_file)
-        np.random.seed(12) # resetting seed each time if inside of loop (bad)
+        np.random.seed(self.seed) # resetting seed each time if inside of loop (bad)
         while(len(self.samples) < self.sample_number and len(self.samples) < item_count):
             self.stac_file = collection_link
             self.stac_content = fetch_and_parse_file(self.stac_file)
             self.stac_content["stac_version"] = self.version
-            stac_type = get_stac_type(self.stac_content).lower()
-            unique_item = False
-            for i in range(4):
-                self.custom = set_schema_addr(self.version, stac_type.lower())
-                message = self.create_message(stac_type, "random sample")
-                message["valid_stac"] = False
-                try:
-                    _ = self.default_validator(stac_type)
-                except jsonschema.exceptions.ValidationError as e:
-                    if e.absolute_path:
-                        err_msg = f"{e.message}. Error is in {' -> '.join([str(i) for i in e.absolute_path])}"
-                    else:
-                        err_msg = f"{e.message} of the root of the STAC object"
-                    message.update(
-                        self.create_err_msg("JSONSchemaValidationError", err_msg)
-                    )
-                    self.message.append(message)
-                    return False
-                message["valid_stac"] = True
-                if i < 3:  # if going through collection->year, year->month, month->day           
-                    child_list = [x for x in self.stac_content["links"] if x["rel"] == "child"]
-                    catalog = np.random.choice(child_list)
-                    address = catalog["href"]
-                    self.stac_file = address
-                else: # if going through day catalog to get to items
-                    item_list = [x for x in self.stac_content["links"] if x["rel"] == "item"]
-                    item = np.random.choice(item_list)
-                    address = item["href"] 
-                    self.stac_file = address # this is address of item, adding it to list of samples so far
-                    if address not in self.samples: # if item address was already in list, restart loop
-                        unique_item = True
-                        self.samples.append(address)
-                        # self.message.append(message)
-                attempts = self.retry
-                while(attempts > 0):
-                    try:
-                        self.stac_content = fetch_and_parse_file(self.stac_file)
-                        break
-                    except:
-                        attempts -= 1
-                        time.sleep(15)
-                # self.stac_content = fetch_and_parse_file(self.stac_file)
-                self.stac_content["stac_version"] = self.version
-                stac_type = get_stac_type(self.stac_content).lower()
-                # if self.verbose is True:
-                #     click.echo(json.dumps(message, indent=4))
+            stac_type = get_stac_type(self.stac_content).lower() # stac_type is collection
+            ##### NASA STAC-SPECIFIC FUNCTION. input: collection link, output: item link 
+            unique_item, message = self.choose_items(stac_type)
+            stac_type = get_stac_type(self.stac_content).lower() # stac_type is item
+            # only log if sample is unique
             if not unique_item:
                 continue
-            # validate item
+            # validate item, create message
             self.custom = set_schema_addr(self.version, stac_type.lower())
             message = self.create_message(stac_type, "random sample")
             if self.version == "0.7.0":
                 schema = fetch_and_parse_schema(self.custom)
-                # this next line prevents this: unknown url type: 'geojson.json' ??
                 schema["allOf"] = [{}]
                 jsonschema.validate(self.stac_content, schema)
             else:
                 msg = self.default_validator(stac_type)
                 message["schema"] = msg["schema"]
             message["valid_stac"] = True
+            # logging
             self.message.append(message)
-            # if self.log != "":
-            #     self.message.append(message)
             if self.verbose is True:
                 click.echo(json.dumps(message, indent=4))
         return True
+    
+    # go through collection or sub catalogs
+    ### THIS LOOP IS NASA STAC SPECIFIC
+    def choose_items(self, stac_type):
+        unique_item = False
+        for i in range(4):
+            # fill out basic fields of message
+            message = self.fill_fields(stac_type)
+            if i < 3:
+                address = self.get_address("child")      
+            else:
+                address = self.get_address("item") # this is address of item, add it to list of samples so far                    
+                if address not in self.samples: # if unique sample has been taken, add it to list of samples and
+                    unique_item = True
+                    self.samples.append(address)
+            # retry feature
+            attempts = self.retry
+            while(attempts > 0):
+                try:
+                    self.stac_content = fetch_and_parse_file(self.stac_file)
+                    break
+                except:
+                    attempts -= 1
+                    time.sleep(15)
+            self.stac_content["stac_version"] = self.version
+            stac_type = get_stac_type(self.stac_content).lower() # stac_type is catalog
+        return unique_item, message
+    
+    # fill out basic fields of the message (this step is used in other types of validation too)
+    def fill_fields(self, stac_type) -> dict:
+        self.custom = set_schema_addr(self.version, stac_type.lower())
+        message = self.create_message(stac_type, "random sample")
+        message["valid_stac"] = False
+        try:
+            _ = self.default_validator(stac_type)
+        except jsonschema.exceptions.ValidationError as e:
+            if e.absolute_path:
+                err_msg = f"{e.message}. Error is in {' -> '.join([str(i) for i in e.absolute_path])}"
+            else:
+                err_msg = f"{e.message} of the root of the STAC object"
+            message.update(
+                self.create_err_msg("JSONSchemaValidationError", err_msg)
+            )
+            self.message.append(message)
+            return False
+        message["valid_stac"] = True
+        return message
 
+    # randomly select object and return its path
+    def get_address(self, option) -> str:
+        object_list = [x for x in self.stac_content["links"] if x["rel"] == option]
+        catalog = np.random.choice(object_list)
+        address = catalog["href"]
+        self.stac_file = address
+        return address
+    
     def validate_dict(cls, stac_content): # pylint: disable=no-self-argument
         cls.stac_content = stac_content
         return cls.run()
