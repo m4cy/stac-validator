@@ -28,7 +28,7 @@ setup(
     keywords="STAC validation raster",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="hhttps://github.com/m4cy/stac-validator",
+    url="https://github.com/m4cy/stac-validator",
     download_url="https://github.com/m4cy/stac-validator/archive/v2.5.0.tar.gz",
     install_requires=[
         "requests>=2.19.1",
