@@ -39,12 +39,6 @@ https://github.com/stac-utils/stac-check
 
 ## Install
 
-Installation from PyPi
-
-```bash
-pip install stac-validator
-```
-
 Installation from Repo
 
 ```bash
@@ -300,4 +294,18 @@ stac-validator https://spot-canada-ortho.s3.amazonaws.com/catalog.json --recursi
         "valid_stac": true
     }
 ]
+```
+
+**--random**
+
+```bash
+stac-validator https://spot-canada-ortho.s3.amazonaws.com/catalog.json --random --sample_number 100 --seed 12 --verbose
+
+```
+
+**--with retries**
+
+```bash
+stac-validator https://spot-canada-ortho.s3.amazonaws.com/catalog.json --retry 15 --verbose
+
 ```
